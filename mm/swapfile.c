@@ -40,6 +40,8 @@
 #include <linux/swapops.h>
 #include <linux/swap_cgroup.h>
 
+#include <linux/suspend.h>
+
 static bool swap_count_continued(struct swap_info_struct *, pgoff_t,
 				 unsigned char);
 static void free_swap_count_continuations(struct swap_info_struct *);
@@ -672,7 +674,11 @@ swp_entry_t get_swap_page(void)
 	pgoff_t offset;
 	int swap_ratio_off = 0;
 
-	if (atomic_long_read(&nr_swap_pages) <= 0)
+	/* Only single cluster request supported */
+	WARN_ON_ONCE(n_goal > 1 && cluster);
+
+	avail_pgs = atomic_long_read(&nr_swap_pages) / nr_pages;
+	if (avail_pgs <= 0)
 		goto noswap;
 	atomic_long_dec(&nr_swap_pages);
 
@@ -704,6 +710,14 @@ start_over:
 		spin_unlock(&swap_avail_lock);
 start:
 		spin_lock(&si->lock);
+#if defined(CONFIG_NANDSWAP)
+		if ((current_is_nswapoutd() && !(si->flags & SWP_NANDSWAP)) ||
+			(!current_is_nswapoutd() && (si->flags & SWP_NANDSWAP))) {
+			spin_lock(&swap_avail_lock);
+			spin_unlock(&si->lock);
+			goto nextsi;
+		}
+#endif
 		if (!si->highest_bit || !(si->flags & SWP_WRITEOK)) {
 			spin_lock(&swap_avail_lock);
 			if (plist_node_empty(&si->avail_list)) {
@@ -2611,6 +2625,10 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	}
 	enable_swap_info(p, prio, swap_map, cluster_info, frontswap_map);
 
+#if defined(CONFIG_NANDSWAP)
+	if (p->prio == SWAP_NANDSWAP_PRIO)
+		p->flags |= SWP_NANDSWAP;
+#endif
 	pr_info("Adding %uk swap on %s.  Priority:%d extents:%d across:%lluk %s%s%s%s%s\n",
 		p->pages<<(PAGE_SHIFT-10), name->name, p->prio,
 		nr_extents, (unsigned long long)span<<(PAGE_SHIFT-10),
@@ -2666,7 +2684,6 @@ void si_swapinfo(struct sysinfo *val)
 {
 	unsigned int type;
 	unsigned long nr_to_be_unused = 0;
-
 	spin_lock(&swap_lock);
 	for (type = 0; type < nr_swapfiles; type++) {
 		struct swap_info_struct *si = swap_info[type];

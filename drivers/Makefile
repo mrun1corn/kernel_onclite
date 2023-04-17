@@ -178,6 +178,11 @@ obj-$(CONFIG_STM)		+= hwtracing/stm/
 obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_NVMEM)		+= nvmem/
 obj-$(CONFIG_ESOC)              += esoc/
+<<<<<<< HEAD
 obj-$(CONFIG_FPGA)		+= fpga/
 obj-$(CONFIG_SENSORS_SSC)		+= sensors/
 obj-$(CONFIG_TEE)		+= tee/
+
+# Oplus nandswap driver
+obj-$(CONFIG_NANDSWAP)		+= oplus_nandswap/
+
